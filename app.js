@@ -7,6 +7,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_KCQJs6nW8aKBFBxycdmOsg_H2UQQ6Yu';
 
 const { parseMoney, fmt, splitEqual, sharesFromItems, computeTransfers, esc, hue } = window.PB;
 const CONFIGURED = !SUPABASE_URL.includes('TWOJ-PROJEKT') && !SUPABASE_ANON_KEY.includes('TWOJ_ANON');
+// Zabezpieczenie: ucina /rest/v1, /auth/v1 itp. oraz ukośnik i spacje na końcu adresu
+const BASE_URL = SUPABASE_URL.trim().replace(/\/(rest|auth|storage|functions|realtime)\/v1.*$/i, '').replace(/\/+$/, '');
+console.log('[PayBud] adres Supabase:', BASE_URL);
 const $ = (s) => document.querySelector(s);
 
 let sb = null;
@@ -224,7 +227,7 @@ function viewHome() {
   const groups = D.groups.length ? `<div class="list">${D.groups.map((g) => `
     <button class="row-item card" data-act="openGroup" data-id="${esc(g.id)}"><div class="ri-main"><div class="ri-title">${esc(g.name)}${g.status === 'closed' ? ' <span class="chip muted">zamknięta</span>' : ''}${g.mstatus === 'leaving' ? ' <span class="chip warn">wychodzisz</span>' : ''}</div></div><div class="ri-side">${balHTML(g.balance)}</div></button>`).join('')}</div>`
     : '<div class="empty">Nie masz jeszcze żadnej grupy.<br>Załóż pierwszą — np. wyjazd albo mieszkanie.</div>';
-  return `<header class="topbar"><div class="title">Twoje grupy</div><button class="icon-btn" data-act="refreshHome">${I.refresh}</button><button class="avatar-btn" data-act="openProfile">${avatar(me(), 34)}</button></header>
+  return `<header class="topbar"><div class="title">Twoje grupy ${hasPremium(S.profile) ? '<span class="chip ok">Premium</span>' : ''}</div><button class="icon-btn" data-act="refreshHome">${I.refresh}</button><button class="avatar-btn" data-act="openProfile">${avatar(me(), 34)}</button></header>
   <main class="page">${invites}${pend}${groups}<button class="btn wide" data-act="newGroup">+ Nowa grupa</button></main>`;
 }
 
@@ -312,7 +315,7 @@ function viewProfile() {
   const p = S.profile; const prem = hasPremium(p);
   return `<header class="topbar"><button class="icon-btn" data-act="goHome">${I.back}</button><div class="title">Profil</div></header>
   <main class="page"><div class="card center-col">${avatar(me(), 92)}<label class="btn small ghost">Zmień zdjęcie<input type="file" accept="image/*" hidden data-file="avatar"></label>
-  <div class="muted">@${esc(p.username)}</div><div class="muted small">${esc(S.user.email)}</div></div>
+  <div class="muted">@${esc(p.username)} ${prem ? '<span class="chip ok">Premium</span>' : ''}</div><div class="muted small">${esc(S.user.email)}</div></div>
   <form data-form="profile" class="card stack"><label class="field"><span>Imię / pseudonim</span><input name="display" value="${esc(p.display_name || '')}" maxlength="30"></label><button class="btn" type="submit">Zapisz</button></form>
   <div class="card stack"><b>Premium ${prem ? '<span class="chip ok">aktywne</span>' : ''}</b>
   ${prem ? `<div class="muted small">Ważne do ${p.premium_until ? new Date(p.premium_until).toLocaleDateString('pl-PL') : 'bezterminowo'}.</div>` : ''}
@@ -663,7 +666,7 @@ async function waitForPremium() {
 }
 
 if (CONFIGURED) {
-  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  sb = window.supabase.createClient(BASE_URL, SUPABASE_ANON_KEY.trim());
   sb.auth.onAuthStateChange((ev, session) => {
     if (ev === 'PASSWORD_RECOVERY') { S.recovering = true; S.view = 'recovery'; render(); return; }
     if (ev === 'SIGNED_OUT') { S.user = null; S.profile = null; S.view = 'auth'; render(); return; }
