@@ -2,7 +2,7 @@
 /* =====================================================================
    PayBud — klient. Wklej swoje dane z Supabase (Project Settings → API).
    ===================================================================== */
-const SUPABASE_URL = 'https://tpylpqnlaelosrwaeysz.supabase.co/rest/v1/';
+const SUPABASE_URL = 'https://tpylpqnlaelosrwaeysz.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_KCQJs6nW8aKBFBxycdmOsg_H2UQQ6Yu';
 
 const { parseMoney, fmt, splitEqual, sharesFromItems, computeTransfers, esc, hue } = window.PB;
