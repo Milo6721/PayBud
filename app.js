@@ -89,6 +89,21 @@ function avatar(id, size) {
 }
 const balHTML = (c) => c > 0 ? `<span class="pos">+${fmt(c)}</span>` : c < 0 ? `<span class="neg">${fmt(c)}</span>` : '<span class="muted">rozliczone</span>';
 
+const COVER_ICONS = ['🏖️','🏠','🍕','✈️','🎉','🛒','🍻','🚗','🏔️','🎬','🎮','🏕️','🍜','🎓','💼','🐾'];
+const COVER_PALETTES = [
+  ['#ff7a59', '#ffb199'], ['#ff5c8a', '#ffa6c1'], ['#a855f7', '#d8b4fe'],
+  ['#6366f1', '#a5b4fc'], ['#0ea5e9', '#7dd3fc'], ['#14b8a6', '#5eead4'],
+  ['#22c55e', '#86efac'], ['#eab308', '#fde047'], ['#f97316', '#fdba74'],
+  ['#ef4444', '#fca5a5'],
+];
+function groupCover(id) {
+  const h = Math.abs(hue(id || ''));
+  const [c1, c2] = COVER_PALETTES[h % COVER_PALETTES.length];
+  const icon = COVER_ICONS[Math.floor(h / 7) % COVER_ICONS.length];
+  return { c1, c2, icon };
+}
+function coverStyle(id) { const c = groupCover(id); return `background:linear-gradient(135deg,${c.c1},${c.c2})`; }
+
 function resizeImage(file, max, quality, square) {
   return new Promise((res, rej) => {
     const img = new Image(); const url = URL.createObjectURL(file);
@@ -152,18 +167,19 @@ async function refreshHome() { await loadHome(); if (S.view === 'home') render()
 
 async function loadGroup() {
   const gid = S.gid;
-  const [g, mem, ex, bal, st] = await Promise.all([
+  const [g, mem, ex, bal, st, gp] = await Promise.all([
     sb.from('groups').select('id,name,status,members_can_invite,created_by').eq('id', gid).single(),
     sb.from('group_members').select('user_id,role,status,leave_requested_at').eq('group_id', gid).in('status', ['active', 'leaving', 'invited']),
     sb.from('expenses').select('id,title,amount_cents,paid_by,created_by,split,status,receipt_path,created_at,expense_shares(user_id,share_cents,approved,reject_reason)').eq('group_id', gid).order('created_at', { ascending: false }).limit(200),
     sb.rpc('group_balances', { p_group: gid }),
     sb.from('settlements').select('id,from_user,to_user,amount_cents,status,created_at').eq('group_id', gid).order('created_at', { ascending: false }).limit(100),
+    sb.from('group_premium').select('group_id').eq('group_id', gid).maybeSingle(),
   ]);
   if (g.error || !g.data) throw new Error('Nie masz dostępu do tej grupy.');
   const members = mem.data || [];
   await loadProfiles([...members.map((m) => m.user_id), ...(ex.data || []).flatMap((e) => [e.paid_by, e.created_by]), ...(st.data || []).flatMap((s) => [s.from_user, s.to_user])]);
   S.data.group = g.data; S.data.members = members; S.data.expenses = ex.data || [];
-  S.data.balances = bal.data || []; S.data.settlements = st.data || [];
+  S.data.balances = bal.data || []; S.data.settlements = st.data || []; S.data.groupPremium = !!(gp.data);
 }
 async function refreshGroup() { await loadGroup(); if (S.view === 'group') render(); }
 
@@ -171,7 +187,8 @@ const activeMembers = () => S.data.members.filter((m) => m.status === 'active');
 const activeIds = () => activeMembers().map((m) => m.user_id);
 const myRole = () => { const m = S.data.members.find((x) => x.user_id === me()); return m ? m.role : null; };
 const isAdmin = () => ['owner', 'admin'].includes(myRole());
-const groupLimit = () => (S.data.members.some((m) => m.status !== 'invited' && hasPremium(P(m.user_id))) ? 10 : 3);
+const groupUnlocked = () => S.data.groupPremium || S.data.members.some((m) => m.status !== 'invited' && hasPremium(P(m.user_id)));
+const groupLimit = () => groupUnlocked() ? Infinity : 3;
 
 /* =====================================================================
    WIDOKI
@@ -209,7 +226,12 @@ function viewAuth() {
     <button class="btn" type="submit">Wyślij link</button>
     <button type="button" class="link" data-act="authMode" data-mode="login">Wróć</button></form>`;
   const tabs = m === 'forgot' ? '' : `<div class="seg"><button class="${m === 'login' ? 'on' : ''}" data-act="authMode" data-mode="login">Logowanie</button><button class="${m === 'register' ? 'on' : ''}" data-act="authMode" data-mode="register">Rejestracja</button></div>`;
-  return `<div class="auth"><div class="logo">PayBud</div><p class="tag">Rozliczaj się ze znajomymi bez kłótni.</p>${banner}<div class="card">${tabs}${form}</div></div>`;
+  return `<div class="auth"><div class="logo">PayBud</div><p class="tag">Rozliczaj się ze znajomymi bez kłótni.</p>${banner}<div class="card">${tabs}${form}</div>
+    <footer class="auth-foot">
+      <a href="legal/regulamin.html" target="_blank">Regulamin</a> · <a href="legal/polityka-prywatnosci.html" target="_blank">Polityka prywatności</a>
+      <div class="muted small" style="margin-top:6px">PayBud — usługa w ramach MGS Corporation<br>Operator: [DO UZUPEŁNIENIA — nazwa firmy] · NIP [DO UZUPEŁNIENIA] · kontakt: [DO UZUPEŁNIENIA]</div>
+    </footer>
+  </div>`;
 }
 
 function viewRecovery() {
@@ -224,11 +246,14 @@ function viewHome() {
     <div class="row"><button class="btn small" data-act="acceptInvite" data-id="${esc(i.group_id)}">Dołącz</button><button class="btn small ghost" data-act="declineInvite" data-id="${esc(i.group_id)}">Odrzuć</button></div></div>`).join('');
   const pend = D.pending.length ? `<div class="card attn"><b>Czeka na Twoją decyzję (${D.pending.length})</b><div class="list">${D.pending.map((p) => `
     <button class="row-item" data-act="openExpense" data-gid="${esc(p.expenses.group_id)}" data-id="${esc(p.expense_id)}"><div class="ri-main"><div class="ri-title">${esc(p.expenses.title)}</div><div class="ri-sub">${esc(p.expenses.groups ? p.expenses.groups.name : '')} · płacił(a): ${esc(nameOf(p.expenses.paid_by))}</div></div><div class="ri-side"><div class="ri-amt">${fmt(p.share_cents)}</div><span class="muted small">Twój udział</span></div></button>`).join('')}</div></div>` : '';
-  const groups = D.groups.length ? `<div class="list">${D.groups.map((g) => `
-    <button class="row-item card" data-act="openGroup" data-id="${esc(g.id)}"><div class="ri-main"><div class="ri-title">${esc(g.name)}${g.status === 'closed' ? ' <span class="chip muted">zamknięta</span>' : ''}${g.mstatus === 'leaving' ? ' <span class="chip warn">wychodzisz</span>' : ''}</div></div><div class="ri-side">${balHTML(g.balance)}</div></button>`).join('')}</div>`
+  const groups = D.groups.length ? `<div class="list">${D.groups.map((g) => { const cv = groupCover(g.id); return `
+    <button class="group-card" data-act="openGroup" data-id="${esc(g.id)}">
+      <div class="gc-cover" style="background:linear-gradient(135deg,${cv.c1},${cv.c2})"><span class="gc-icon">${cv.icon}</span></div>
+      <div class="gc-body"><div class="ri-title">${esc(g.name)}${g.status === 'closed' ? ' <span class="chip muted">zamknięta</span>' : ''}${g.mstatus === 'leaving' ? ' <span class="chip warn">wychodzisz</span>' : ''}</div><div class="gc-bal">${balHTML(g.balance)}</div></div>
+    </button>`; }).join('')}</div>`
     : '<div class="empty">Nie masz jeszcze żadnej grupy.<br>Załóż pierwszą — np. wyjazd albo mieszkanie.</div>';
-  return `<header class="topbar"><div class="title">Twoje grupy ${hasPremium(S.profile) ? '<span class="chip ok">Premium</span>' : ''}</div><button class="icon-btn" data-act="refreshHome">${I.refresh}</button><button class="avatar-btn" data-act="openProfile">${avatar(me(), 34)}</button></header>
-  <main class="page">${invites}${pend}${groups}<button class="btn wide" data-act="newGroup">+ Nowa grupa</button></main>`;
+  return `<header class="topbar"><div class="title">Twoje grupy ${hasPremium(S.profile) ? '<span class="chip ok">Premium</span>' : `<span class="chip">${D.groups.length}/1 grup — plan darmowy</span>`}</div><button class="icon-btn" data-act="refreshHome">${I.refresh}</button><button class="avatar-btn" data-act="openProfile">${avatar(me(), 34)}</button></header>
+  <main class="page">${invites}${pend}${groups}<button class="btn wide" data-act="newGroup">+ Nowa grupa</button>${!hasPremium(S.profile) ? '<button class="link" data-act="premiumInfo">Zobacz co daje Premium →</button>' : ''}</main>`;
 }
 
 function viewGroup() {
@@ -239,8 +264,9 @@ function viewGroup() {
   const head = mine > 0 ? `Należy Ci się <span class="pos big">${fmt(mine)}</span>` : mine < 0 ? `Jesteś winien <span class="neg big">${fmt(-mine)}</span>` : 'Wszystko wyrównane';
   const tabs = [['expenses', I.list, 'Wydatki'], ['settle', I.swap, 'Rozlicz'], ['members', I.users, 'Osoby'], ['settings', I.cog, 'Ustawienia']];
   const body = { expenses: tabExpenses, settle: tabSettle, members: tabMembers, settings: tabSettings }[S.tab]();
-  return `<header class="topbar"><button class="icon-btn" data-act="goHome">${I.back}</button><div class="title">${esc(g.name)}${g.status === 'closed' ? ' <span class="chip muted">zamknięta</span>' : ''}</div><button class="icon-btn" data-act="refreshGroup">${I.refresh}</button></header>
-  <main class="page"><div class="card balance"><div>${head}</div>${pend ? `<div class="muted small">${pend} ${pend === 1 ? 'wydatek czeka' : 'wydatki czekają'} na zatwierdzenie — nie wchodzą jeszcze do salda</div>` : ''}</div>${body}</main>
+  const cv = groupCover(g.id);
+  return `<header class="topbar topbar-cover" style="background:linear-gradient(135deg,${cv.c1},${cv.c2})"><button class="icon-btn on-cover" data-act="goHome">${I.back}</button><div class="title on-cover">${cv.icon} ${esc(g.name)}${g.status === 'closed' ? ' <span class="chip muted">zamknięta</span>' : ''}</div><button class="icon-btn on-cover" data-act="refreshGroup">${I.refresh}</button></header>
+  <main class="page"><div class="card balance" style="background:linear-gradient(135deg,${cv.c1},${cv.c2})"><div>${head}</div>${pend ? `<div class="muted small">${pend} ${pend === 1 ? 'wydatek czeka' : 'wydatki czekają'} na zatwierdzenie — nie wchodzą jeszcze do salda</div>` : ''}</div>${body}</main>
   ${g.status === 'active' && S.tab === 'expenses' ? `<button class="fab" data-act="addExpense" aria-label="Dodaj wydatek">${I.plus}</button>` : ''}
   <nav class="tabs">${tabs.map(([k, ico, l]) => `<button class="${S.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}">${ico}<span>${l}</span></button>`).join('')}</nav>`;
 }
@@ -300,13 +326,15 @@ function tabMembers() {
     return `<div class="card member"><div class="mem-top">${avatar(m.user_id, 42)}<div class="ri-main"><div class="ri-title">${esc(nameOf(m.user_id))} ${chips}</div><div class="ri-sub">@${esc(p.username)}${hasPremium(p) ? ' · <span class="chip ok">premium</span>' : ''}</div></div></div>${extra}${mgmt.length ? `<div class="row wrap">${mgmt.join('')}</div>` : ''}</div>`;
   }).join('');
   const cnt = D.members.filter((m) => m.status !== 'leaving' || true).length;
-  const invite = canInvite && D.group.status === 'active' ? `<form data-form="invite" class="card stack"><b>Zaproś po nazwie użytkownika</b><div class="row"><input name="username" placeholder="np. kuba_23" required autocapitalize="none" autocomplete="off"><button class="btn" type="submit">Zaproś</button></div><div class="muted small">Osób: ${cnt}/${groupLimit()}. ${groupLimit() === 3 ? 'Premium któregokolwiek członka podnosi limit do 10.' : ''}</div></form>` : '';
+  const limitTxt = groupUnlocked() ? 'bez limitu' : `${cnt}/3`;
+  const invite = canInvite && D.group.status === 'active' ? `<form data-form="invite" class="card stack"><b>Zaproś po nazwie użytkownika</b><div class="row"><input name="username" placeholder="np. kuba_23" required autocapitalize="none" autocomplete="off"><button class="btn" type="submit">Zaproś</button></div><div class="muted small">Osób: ${limitTxt}. ${groupUnlocked() ? '' : 'Premium członka albo jednorazowy odblok grupy znoszą limit.'}</div></form>` : '';
   return `${invite}${rows}`;
 }
 
 function tabSettings() {
   const D = S.data; const owner = myRole() === 'owner'; const g = D.group;
-  return `${owner ? `<div class="card"><label class="switch-row"><span><b>Członkowie mogą zapraszać</b><div class="muted small">Domyślnie zapraszają tylko właściciel i admini.</div></span><input type="checkbox" data-act="toggleInvite" ${g.members_can_invite ? 'checked' : ''}></label></div>` : ''}
+  const unlock = (isAdmin() && !groupUnlocked()) ? `<div class="card stack"><b>Bez limitu osób w tej grupie</b><p class="muted small">Jednorazowa opłata 10 zł — ta grupa na zawsze traci limit 3 osób, niezależnie od tego, kto ma premium na koncie. Nie daje skanu AI.</p><button class="btn wide" data-act="buyGroupPremium">Odblokuj tę grupę — 10 zł</button></div>` : (groupUnlocked() ? `<div class="notice">Ta grupa ma odblokowany limit osób.</div>` : '');
+  return `${unlock}${owner ? `<div class="card"><label class="switch-row"><span><b>Członkowie mogą zapraszać</b><div class="muted small">Domyślnie zapraszają tylko właściciel i admini.</div></span><input type="checkbox" data-act="toggleInvite" ${g.members_can_invite ? 'checked' : ''}></label></div>` : ''}
   <div class="card stack"><b>Wyjście z grupy</b><p class="muted small">Wyjdziesz od razu, jeśli masz saldo 0 i brak oczekujących wydatków. W innym razie zaczyna się spór: reszta grupy ma godzinę na reakcję, potem wychodzisz automatycznie, a niewyrównane saldo zostaje zapisane poza grupą.</p><button class="btn ghost danger-t" data-act="leaveGroup">Wyjdź z grupy</button></div>
   ${owner && g.status === 'active' ? '<div class="card stack"><b>Zamknij grupę</b><p class="muted small">Po zamknięciu nie da się dodawać wydatków. Historia zostaje.</p><button class="btn ghost danger-t" data-act="closeGroup">Zamknij grupę</button></div>' : ''}`;
 }
@@ -318,10 +346,11 @@ function viewProfile() {
   <div class="muted">@${esc(p.username)} ${prem ? '<span class="chip ok">Premium</span>' : ''}</div><div class="muted small">${esc(S.user.email)}</div></div>
   <form data-form="profile" class="card stack"><label class="field"><span>Imię / pseudonim</span><input name="display" value="${esc(p.display_name || '')}" maxlength="30"></label><button class="btn" type="submit">Zapisz</button></form>
   <div class="card stack"><b>Premium ${prem ? '<span class="chip ok">aktywne</span>' : ''}</b>
-  ${prem ? `<div class="muted small">Ważne do ${p.premium_until ? new Date(p.premium_until).toLocaleDateString('pl-PL') : 'bezterminowo'}.</div>` : ''}
-  <ul class="feat"><li>Skan paragonów przez AI</li><li>Grupy do 10 osób</li><li>Zdjęcia paragonów przy wydatkach</li></ul>
+  ${prem ? `<div class="muted small">Ważne do ${p.premium_until ? new Date(p.premium_until).toLocaleDateString('pl-PL') : 'bezterminowo'}.</div>` : '<div class="muted small">Plan darmowy: 1 grupa na zawsze, do 3 osób.</div>'}
+  <ul class="feat"><li>Nielimitowana liczba grup</li><li>Nielimitowana liczba osób w grupach</li><li>Skan paragonów przez AI (do 20 dziennie)</li><li>Eksport PDF</li></ul>
   <button class="btn" data-act="premiumInfo">${prem ? 'Przedłuż premium' : 'Kup premium'}</button></div>
-  <button class="btn ghost wide" data-act="logout">Wyloguj</button></main>`;
+  <button class="btn ghost wide" data-act="logout">Wyloguj</button>
+  <footer class="auth-foot"><a href="legal/regulamin.html" target="_blank">Regulamin</a> · <a href="legal/polityka-prywatnosci.html" target="_blank">Polityka prywatności</a><div class="muted small" style="margin-top:6px">PayBud — usługa w ramach MGS Corporation</div></footer></main>`;
 }
 
 /* =====================================================================
@@ -479,12 +508,18 @@ const actions = {
   /* ----- premium ----- */
   async premiumInfo() {
     const price = await rpc('my_premium_price');
-    openModal(`<h3>PayBud Premium</h3><ul class="feat"><li>Skan paragonów przez AI — zdjęcie i gotowy wydatek</li><li>Grupy do 10 osób (dla całej grupy)</li><li>Zdjęcia paragonów przy wydatkach</li></ul>
-      <div class="big-amt">${fmt(price)} <small>/ 30 dni</small></div>${price < 1500 ? '<p class="notice">Cena obniżona — jesteś w grupie z osobą, która ma premium.</p>' : ''}
+    openModal(`<h3>PayBud Premium</h3><ul class="feat"><li>Nielimitowana liczba grup (plan darmowy: 1 grupa na zawsze)</li><li>Nielimitowana liczba osób w każdej Twojej grupie</li><li>Skan paragonów przez AI (Gemini) — zdjęcie i gotowy wydatek, do 20 dziennie</li><li>Eksport PDF</li></ul>
+      <div class="big-amt">${fmt(price)} <small>/ 30 dni</small></div>
       <button class="btn wide" data-act="buyPremium">Zapłać przez Przelewy24</button><button class="btn ghost wide" data-act="closeModal">Nie teraz</button>`);
   },
   async buyPremium() {
-    const { data, error } = await sb.functions.invoke('p24-create', { body: {} });
+    const { data, error } = await sb.functions.invoke('p24-create', { body: { kind: 'account' } });
+    if (error) throw await fnError(error);
+    if (!data || !data.url) throw new Error((data && data.error) || 'Nie udało się rozpocząć płatności.');
+    window.location.href = data.url;
+  },
+  async buyGroupPremium() {
+    const { data, error } = await sb.functions.invoke('p24-create', { body: { kind: 'group', group_id: S.gid } });
     if (error) throw await fnError(error);
     if (!data || !data.url) throw new Error((data && data.error) || 'Nie udało się rozpocząć płatności.');
     window.location.href = data.url;
