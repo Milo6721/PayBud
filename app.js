@@ -89,12 +89,32 @@ function avatar(id, size) {
 }
 const balHTML = (c) => c > 0 ? `<span class="pos">+${fmt(c)}</span>` : c < 0 ? `<span class="neg">${fmt(c)}</span>` : '<span class="muted">rozliczone</span>';
 
-const COVER_ICONS = ['🏖️','🏠','🍕','✈️','🎉','🛒','🍻','🚗','🏔️','🎬','🎮','🏕️','🍜','🎓','💼','🐾'];
+// Własne ikony SVG (outline, 1.8px, dziedziczą kolor przez currentColor) —
+// zamiast systemowych emoji, żeby wyglądały tak samo na każdym urządzeniu.
+const SVG_A = 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+const COVER_ICONS = [
+  `<svg viewBox="0 0 24 24" ${SVG_A}><path d="M3 12l9-7 9 7"/><path d="M5 10v9h14v-9"/><path d="M10 19v-5h4v5"/></svg>`, // dom
+  `<svg viewBox="0 0 24 24" ${SVG_A}><path d="M3 18l6-11 4 6 2-3 6 8z"/></svg>`, // góry/wyjazd
+  `<svg viewBox="0 0 24 24" ${SVG_A}><path d="M2 12l7-2.5L12 3l1 6.5L21 8l-6 5 2 7-5-3.5L7 20l1-7z"/></svg>`, // samolot papierowy
+  `<svg viewBox="0 0 24 24" ${SVG_A}><ellipse cx="12" cy="12" rx="9" ry="6"/><path d="M3 12h18"/></svg>`, // talerz/jedzenie
+  `<svg viewBox="0 0 24 24" ${SVG_A}><path d="M6 7h12l1 13H5z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>`, // torba zakupy
+  `<svg viewBox="0 0 24 24" ${SVG_A}><path d="M7 3v7a5 5 0 0 0 10 0V3"/><path d="M12 15v6M8 21h8"/></svg>`, // kieliszek/impreza
+  `<svg viewBox="0 0 24 24" ${SVG_A}><rect x="4" y="9" width="16" height="7" rx="1.5"/><circle cx="7.5" cy="19" r="1.6"/><circle cx="16.5" cy="19" r="1.6"/><path d="M6 9l2-4h8l2 4"/></svg>`, // samochód
+  `<svg viewBox="0 0 24 24" ${SVG_A}><path d="M3 21l9-16 9 16z"/><path d="M9 21v-6h6v6"/></svg>`, // namiot/kemping
+  `<svg viewBox="0 0 24 24" ${SVG_A}><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M9 21h6M12 17v4"/><path d="M8 13l3-3 2 2 3-4"/></svg>`, // ekran/film
+  `<svg viewBox="0 0 24 24" ${SVG_A}><path d="M5 9h11v6a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4z"/><path d="M16 11h2a2 2 0 0 1 0 4h-2"/><path d="M8 3v3M12 3v3"/></svg>`, // kubek/napoje
+  `<svg viewBox="0 0 24 24" ${SVG_A}><path d="M12 3l2.2 4.8L19 9l-3.6 3.6.9 4.9L12 15.2 7.7 17.5l.9-4.9L5 9l4.8-1.2z"/></svg>`, // gwiazda/uczelnia
+  `<svg viewBox="0 0 24 24" ${SVG_A}><rect x="3" y="8" width="18" height="11" rx="2"/><path d="M8 8V6a3 3 0 0 1 3-3h2a3 3 0 0 1 3 3v2"/><path d="M3 13h18"/></svg>`, // walizka/praca
+  `<svg viewBox="0 0 24 24" ${SVG_A}><path d="M12 19s-7-4.5-7-9.5A4 4 0 0 1 12 7a4 4 0 0 1 7 2.5C19 14.5 12 19 12 19z"/></svg>`, // serce/zwierzak
+  `<svg viewBox="0 0 24 24" ${SVG_A}><circle cx="8" cy="9" r="4.2"/><circle cx="16" cy="15" r="4.2"/></svg>`, // monety/pieniądze
+  `<svg viewBox="0 0 24 24" ${SVG_A}><circle cx="6" cy="17" r="3.5"/><circle cx="18" cy="17" r="3.5"/><path d="M6 17l4-9h4M10 17h8l-3-6h-6"/></svg>`, // rower/aktywność
+  `<svg viewBox="0 0 24 24" ${SVG_A}><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10.5h18"/><path d="M6.5 14.5h4"/></svg>`, // karta płatnicza
+];
 const COVER_PALETTES = [
-  ['#ff7a59', '#ffb199'], ['#ff5c8a', '#ffa6c1'], ['#a855f7', '#d8b4fe'],
-  ['#6366f1', '#a5b4fc'], ['#0ea5e9', '#7dd3fc'], ['#14b8a6', '#5eead4'],
-  ['#22c55e', '#86efac'], ['#eab308', '#fde047'], ['#f97316', '#fdba74'],
-  ['#ef4444', '#fca5a5'],
+  ['#1e3a5f', '#4a6fa5'], ['#0f766e', '#2dd4bf'], ['#7c2d12', '#ea580c'],
+  ['#581c87', '#a855f7'], ['#134e4a', '#14b8a6'], ['#1e1b4b', '#6366f1'],
+  ['#78350f', '#d97706'], ['#831843', '#db2777'], ['#14532d', '#22c55e'],
+  ['#3f3f46', '#71717a'],
 ];
 function groupCover(id, iconIdx, colorIdx) {
   const h = Math.abs(hue(id || ''));
