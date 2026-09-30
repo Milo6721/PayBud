@@ -15,7 +15,7 @@ const $ = (s) => document.querySelector(s);
 let sb = null;
 const S = {
   user: null, profile: null, view: 'boot', authMode: 'login', pendingConfirm: null,
-  recovering: false, gid: null, tab: 'expenses',
+  recovering: false, gid: null, tab: 'expenses', pickIcon: null, pickColor: null,
   data: { groups: [], invites: [], pending: [], group: null, members: [], expenses: [], balances: [], settlements: [] },
 };
 const profCache = {};
@@ -96,10 +96,12 @@ const COVER_PALETTES = [
   ['#22c55e', '#86efac'], ['#eab308', '#fde047'], ['#f97316', '#fdba74'],
   ['#ef4444', '#fca5a5'],
 ];
-function groupCover(id) {
+function groupCover(id, iconIdx, colorIdx) {
   const h = Math.abs(hue(id || ''));
-  const [c1, c2] = COVER_PALETTES[h % COVER_PALETTES.length];
-  const icon = COVER_ICONS[Math.floor(h / 7) % COVER_ICONS.length];
+  const ci = (colorIdx != null) ? colorIdx : (h % COVER_PALETTES.length);
+  const [c1, c2] = COVER_PALETTES[ci % COVER_PALETTES.length];
+  const ii = (iconIdx != null) ? iconIdx : Math.floor(h / 7) % COVER_ICONS.length;
+  const icon = COVER_ICONS[ii % COVER_ICONS.length];
   return { c1, c2, icon };
 }
 function coverStyle(id) { const c = groupCover(id); return `background:linear-gradient(135deg,${c.c1},${c.c2})`; }
@@ -151,12 +153,12 @@ async function loadMe() {
 async function loadHome() {
   const uid = me();
   const [gm, inv, sh] = await Promise.all([
-    sb.from('group_members').select('group_id,role,status,groups(id,name,status)').eq('user_id', uid).in('status', ['active', 'leaving']),
+    sb.from('group_members').select('group_id,role,status,groups(id,name,status,icon_idx,color_idx)').eq('user_id', uid).in('status', ['active', 'leaving']),
     sb.from('group_members').select('group_id,invited_by,groups(id,name)').eq('user_id', uid).eq('status', 'invited'),
     sb.from('expense_shares').select('expense_id,share_cents,expenses(id,title,amount_cents,group_id,paid_by,status,groups(name))').eq('user_id', uid).is('approved', null),
   ]);
   if (gm.error) throw gm.error;
-  const groups = (gm.data || []).filter((x) => x.groups).map((x) => ({ id: x.groups.id, name: x.groups.name, status: x.groups.status, role: x.role, mstatus: x.status, balance: 0 }));
+  const groups = (gm.data || []).filter((x) => x.groups).map((x) => ({ id: x.groups.id, name: x.groups.name, status: x.groups.status, iconIdx: x.groups.icon_idx, colorIdx: x.groups.color_idx, role: x.role, mstatus: x.status, balance: 0 }));
   const invites = (inv.data || []).filter((x) => x.groups);
   const pending = (sh.data || []).filter((x) => x.expenses && x.expenses.status === 'pending');
   await loadProfiles([...invites.map((i) => i.invited_by), ...pending.map((p) => p.expenses.paid_by)]);
@@ -168,7 +170,7 @@ async function refreshHome() { await loadHome(); if (S.view === 'home') render()
 async function loadGroup() {
   const gid = S.gid;
   const [g, mem, ex, bal, st, gp] = await Promise.all([
-    sb.from('groups').select('id,name,status,members_can_invite,created_by').eq('id', gid).single(),
+    sb.from('groups').select('id,name,status,members_can_invite,created_by,icon_idx,color_idx').eq('id', gid).single(),
     sb.from('group_members').select('user_id,role,status,leave_requested_at').eq('group_id', gid).in('status', ['active', 'leaving', 'invited']),
     sb.from('expenses').select('id,title,amount_cents,paid_by,created_by,split,status,receipt_path,created_at,expense_shares(user_id,share_cents,approved,reject_reason)').eq('group_id', gid).order('created_at', { ascending: false }).limit(200),
     sb.rpc('group_balances', { p_group: gid }),
@@ -246,7 +248,7 @@ function viewHome() {
     <div class="row"><button class="btn small" data-act="acceptInvite" data-id="${esc(i.group_id)}">Dołącz</button><button class="btn small ghost" data-act="declineInvite" data-id="${esc(i.group_id)}">Odrzuć</button></div></div>`).join('');
   const pend = D.pending.length ? `<div class="card attn"><b>Czeka na Twoją decyzję (${D.pending.length})</b><div class="list">${D.pending.map((p) => `
     <button class="row-item" data-act="openExpense" data-gid="${esc(p.expenses.group_id)}" data-id="${esc(p.expense_id)}"><div class="ri-main"><div class="ri-title">${esc(p.expenses.title)}</div><div class="ri-sub">${esc(p.expenses.groups ? p.expenses.groups.name : '')} · płacił(a): ${esc(nameOf(p.expenses.paid_by))}</div></div><div class="ri-side"><div class="ri-amt">${fmt(p.share_cents)}</div><span class="muted small">Twój udział</span></div></button>`).join('')}</div></div>` : '';
-  const groups = D.groups.length ? `<div class="list">${D.groups.map((g) => { const cv = groupCover(g.id); return `
+  const groups = D.groups.length ? `<div class="list">${D.groups.map((g) => { const cv = groupCover(g.id, g.iconIdx, g.colorIdx); return `
     <button class="group-card" data-act="openGroup" data-id="${esc(g.id)}">
       <div class="gc-cover" style="background:linear-gradient(135deg,${cv.c1},${cv.c2})"><span class="gc-icon">${cv.icon}</span></div>
       <div class="gc-body"><div class="ri-title">${esc(g.name)}${g.status === 'closed' ? ' <span class="chip muted">zamknięta</span>' : ''}${g.mstatus === 'leaving' ? ' <span class="chip warn">wychodzisz</span>' : ''}</div><div class="gc-bal">${balHTML(g.balance)}</div></div>
@@ -264,7 +266,7 @@ function viewGroup() {
   const head = mine > 0 ? `Należy Ci się <span class="pos big">${fmt(mine)}</span>` : mine < 0 ? `Jesteś winien <span class="neg big">${fmt(-mine)}</span>` : 'Wszystko wyrównane';
   const tabs = [['expenses', I.list, 'Wydatki'], ['settle', I.swap, 'Rozlicz'], ['members', I.users, 'Osoby'], ['settings', I.cog, 'Ustawienia']];
   const body = { expenses: tabExpenses, settle: tabSettle, members: tabMembers, settings: tabSettings }[S.tab]();
-  const cv = groupCover(g.id);
+  const cv = groupCover(g.id, g.icon_idx, g.color_idx);
   return `<header class="topbar topbar-cover" style="background:linear-gradient(135deg,${cv.c1},${cv.c2})"><button class="icon-btn on-cover" data-act="goHome">${I.back}</button><div class="title on-cover">${cv.icon} ${esc(g.name)}${g.status === 'closed' ? ' <span class="chip muted">zamknięta</span>' : ''}</div><button class="icon-btn on-cover" data-act="refreshGroup">${I.refresh}</button></header>
   <main class="page"><div class="card balance" style="background:linear-gradient(135deg,${cv.c1},${cv.c2})"><div>${head}</div>${pend ? `<div class="muted small">${pend} ${pend === 1 ? 'wydatek czeka' : 'wydatki czekają'} na zatwierdzenie — nie wchodzą jeszcze do salda</div>` : ''}</div>${body}</main>
   ${g.status === 'active' && S.tab === 'expenses' ? `<button class="fab" data-act="addExpense" aria-label="Dodaj wydatek">${I.plus}</button>` : ''}
@@ -331,10 +333,26 @@ function tabMembers() {
   return `${invite}${rows}`;
 }
 
+function iconPickerHTML(g) {
+  const baseIcon = g.icon_idx != null ? g.icon_idx : (Math.abs(hue(g.id)) / 7 | 0) % COVER_ICONS.length;
+  const baseColor = g.color_idx != null ? g.color_idx : Math.abs(hue(g.id)) % COVER_PALETTES.length;
+  const selIcon = S.pickIcon != null ? S.pickIcon : baseIcon;
+  const selColor = S.pickColor != null ? S.pickColor : baseColor;
+  const [pc1, pc2] = COVER_PALETTES[selColor];
+  const icons = COVER_ICONS.map((ic, i) => `<button type="button" class="pick-ic ${i === selIcon ? 'on' : ''}" data-act="pickIcon" data-i="${i}">${ic}</button>`).join('');
+  const colors = COVER_PALETTES.map(([c1, c2], i) => `<button type="button" class="pick-col ${i === selColor ? 'on' : ''}" data-act="pickColor" data-i="${i}" style="background:linear-gradient(135deg,${c1},${c2})"></button>`).join('');
+  return `<div class="card stack"><b>Wygląd grupy</b>
+    <div class="cover-preview" style="background:linear-gradient(135deg,${pc1},${pc2})">${COVER_ICONS[selIcon]}</div>
+    <div class="muted small">Ikonka</div><div class="pick-row">${icons}</div>
+    <div class="muted small">Kolor</div><div class="pick-row">${colors}</div>
+    <button class="btn" data-act="saveGroupIcon">Zapisz</button></div>`;
+}
+
 function tabSettings() {
   const D = S.data; const owner = myRole() === 'owner'; const g = D.group;
   const unlock = (isAdmin() && !groupUnlocked()) ? `<div class="card stack"><b>Bez limitu osób w tej grupie</b><p class="muted small">Jednorazowa opłata 10 zł — ta grupa na zawsze traci limit 3 osób, niezależnie od tego, kto ma premium na koncie. Nie daje skanu AI.</p><button class="btn wide" data-act="buyGroupPremium">Odblokuj tę grupę — 10 zł</button></div>` : (groupUnlocked() ? `<div class="notice">Ta grupa ma odblokowany limit osób.</div>` : '');
-  return `${unlock}${owner ? `<div class="card"><label class="switch-row"><span><b>Członkowie mogą zapraszać</b><div class="muted small">Domyślnie zapraszają tylko właściciel i admini.</div></span><input type="checkbox" data-act="toggleInvite" ${g.members_can_invite ? 'checked' : ''}></label></div>` : ''}
+  const iconPicker = isAdmin() ? iconPickerHTML(g) : '';
+  return `${iconPicker}${unlock}${owner ? `<div class="card"><label class="switch-row"><span><b>Członkowie mogą zapraszać</b><div class="muted small">Domyślnie zapraszają tylko właściciel i admini.</div></span><input type="checkbox" data-act="toggleInvite" ${g.members_can_invite ? 'checked' : ''}></label></div>` : ''}
   <div class="card stack"><b>Wyjście z grupy</b><p class="muted small">Wyjdziesz od razu, jeśli masz saldo 0 i brak oczekujących wydatków. W innym razie zaczyna się spór: reszta grupy ma godzinę na reakcję, potem wychodzisz automatycznie, a niewyrównane saldo zostaje zapisane poza grupą.</p><button class="btn ghost danger-t" data-act="leaveGroup">Wyjdź z grupy</button></div>
   ${owner && g.status === 'active' ? '<div class="card stack"><b>Zamknij grupę</b><p class="muted small">Po zamknięciu nie da się dodawać wydatków. Historia zostaje.</p><button class="btn ghost danger-t" data-act="closeGroup">Zamknij grupę</button></div>' : ''}`;
 }
@@ -426,7 +444,7 @@ const actions = {
   async openProfile() { S.view = 'profile'; render(); },
   tab(d) { S.tab = d.tab; render(); },
 
-  async openGroup(d) { S.gid = d.id; S.tab = 'expenses'; S.view = 'group'; S.data.group = null; render(); try { await loadGroup(); } catch (e) { S.view = 'home'; toast(errMsg(e), 'err'); await loadHome(); } render(); },
+  async openGroup(d) { S.gid = d.id; S.tab = 'expenses'; S.view = 'group'; S.data.group = null; S.pickIcon = null; S.pickColor = null; render(); try { await loadGroup(); } catch (e) { S.view = 'home'; toast(errMsg(e), 'err'); await loadHome(); } render(); },
   async openExpense(d) { await actions.openGroup({ id: d.gid }); await actions.showExpense({ id: d.id }); },
   newGroup() { openModal('<h3>Nowa grupa</h3><form data-form="newGroup" class="stack"><label class="field"><span>Nazwa</span><input name="name" required maxlength="60" placeholder="np. Wyjazd w góry" autofocus></label><button class="btn" type="submit">Utwórz</button></form>'); },
   async acceptInvite(d) { await rpc('accept_invite', { p_group: d.id }); toast('Dołączono do grupy.'); await refreshHome(); },
@@ -505,10 +523,22 @@ const actions = {
     F.receipt = SCAN.blob; SCAN = null; openAddExpense();
   },
 
+  /* ----- wygląd grupy ----- */
+  pickIcon(d) { S.pickIcon = Number(d.i); render(); },
+  pickColor(d) { S.pickColor = Number(d.i); render(); },
+  async saveGroupIcon() {
+    const icon = S.pickIcon != null ? S.pickIcon : (S.data.group.icon_idx != null ? S.data.group.icon_idx : (Math.abs(hue(S.gid)) / 7 | 0) % COVER_ICONS.length);
+    const color = S.pickColor != null ? S.pickColor : (S.data.group.color_idx != null ? S.data.group.color_idx : Math.abs(hue(S.gid)) % COVER_PALETTES.length);
+    await rpc('set_group_icon', { p_group: S.gid, p_icon: icon, p_color: color });
+    S.pickIcon = null; S.pickColor = null;
+    toast('Zapisano wygląd grupy.', 'ok');
+    await refreshGroup();
+  },
+
   /* ----- premium ----- */
   async premiumInfo() {
     const price = await rpc('my_premium_price');
-    openModal(`<h3>PayBud Premium</h3><ul class="feat"><li>Nielimitowana liczba grup (plan darmowy: 1 grupa na zawsze)</li><li>Nielimitowana liczba osób w każdej Twojej grupie</li><li>Skan paragonów przez AI (Gemini) — zdjęcie i gotowy wydatek, do 20 dziennie</li><li>Eksport PDF</li></ul>
+    openModal(`<h3>PayBud Premium</h3><ul class="feat"><li>Nielimitowana liczba grup (plan darmowy: 1 grupa na zawsze)</li><li>Nielimitowana liczba osób w każdej Twojej grupie</li><li>Skan paragonów przez AI — zdjęcie i gotowy wydatek, do 20 dziennie</li><li>Eksport PDF</li></ul>
       <div class="big-amt">${fmt(price)} <small>/ 30 dni</small></div>
       <button class="btn wide" data-act="buyPremium">Zapłać przez Przelewy24</button><button class="btn ghost wide" data-act="closeModal">Nie teraz</button>`);
   },
