@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f9d76">
+<meta name="theme-color" content="#1e3a5f">
 <title>PayBud — rozliczaj się bez kłótni</title>
 <meta name="description" content="PayBud — aplikacja do dzielenia rachunków i rozliczania wspólnych wydatków w grupie. Wyjazdy, mieszkania, wydarzenia — kto komu jest winien, bez liczenia na kartce.">
 <meta name="keywords" content="dzielenie rachunków, rozliczanie wydatków, podział kosztów w grupie, splitwise po polsku, wspólne wydatki, rozliczenia wyjazd, PayBud">
@@ -16,7 +16,8 @@
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="PayBud — rozliczaj się bez kłótni">
 <meta name="twitter:description" content="Dziel rachunki i rozliczaj wspólne wydatki w grupie.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230f9d76'/%3E%3Cpath d='M20 44V20h13a8 8 0 0 1 0 16H26' fill='none' stroke='white' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
   :root{
@@ -70,10 +71,14 @@
   .group-card{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:#fff;border-radius:var(--r);box-shadow:var(--shadow);padding:10px;transition:transform .12s}
   .group-card:active{transform:scale(.98)}
   .gc-cover{width:56px;height:56px;border-radius:14px;flex-shrink:0;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 10px rgba(0,0,0,.12)}
-  .gc-icon{font-size:26px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.15))}
+  .gc-icon{color:#fff;display:flex}
+  .gc-icon svg{width:26px;height:26px}
 
   /* wybór ikonki/koloru grupy */
-  .cover-preview{width:64px;height:64px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:30px;box-shadow:0 6px 14px rgba(0,0,0,.15);margin:2px auto 4px}
+  .cover-preview{width:64px;height:64px;border-radius:16px;display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 6px 14px rgba(0,0,0,.15);margin:2px auto 4px}
+  .cover-preview svg{width:30px;height:30px}
+  .pick-ic svg{width:19px;height:19px;color:var(--ink)}
+  .pick-ic.on svg{color:var(--p1)}
   .pick-row{display:flex;flex-wrap:wrap;gap:8px}
   .pick-ic{width:40px;height:40px;border-radius:11px;background:var(--bg);font-size:19px;display:flex;align-items:center;justify-content:center;border:2px solid transparent}
   .pick-ic.on{border-color:var(--ink);background:#fff}
@@ -115,7 +120,8 @@
   .icon-btn{width:38px;height:38px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;color:var(--ink)}
   .icon-btn:hover{background:rgba(24,20,37,.06)}
   .topbar-cover{padding-bottom:34px;margin-bottom:-22px;border-radius:0 0 26px 26px;box-shadow:0 6px 20px rgba(0,0,0,.1)}
-  .topbar-cover .title.on-cover{color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .topbar-cover .title.on-cover{color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.2);display:flex;align-items:center;gap:8px}
+  .topbar-cover .title.on-cover svg{width:20px;height:20px;flex-shrink:0}
   .icon-btn.on-cover{color:#fff}
   .icon-btn.on-cover:hover{background:rgba(255,255,255,.2)}
   .avatar-btn{border-radius:50%;padding:0;line-height:0}
