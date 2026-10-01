@@ -251,7 +251,7 @@ function viewAuth() {
   return `<div class="auth"><div class="logo">PayBud</div><p class="tag">Rozliczaj się ze znajomymi bez kłótni.</p>${banner}<div class="card">${tabs}${form}</div>
     <footer class="auth-foot">
       <a href="legal/regulamin.html" target="_blank">Regulamin</a> · <a href="legal/polityka-prywatnosci.html" target="_blank">Polityka prywatności</a>
-      <div class="muted small" style="margin-top:6px">PayBud — usługa w ramach MGS Corporation<br>Operator: [DO UZUPEŁNIENIA — nazwa firmy] · NIP [DO UZUPEŁNIENIA] · kontakt: [DO UZUPEŁNIENIA]</div>
+      <div class="muted small" style="margin-top:6px">PayBud — usługa w ramach MGS Corporation<br>Operator: MGS Corporation · NIP brak · kontakt: mgs.corporation@outlook.com</div>
     </footer>
   </div>`;
 }
