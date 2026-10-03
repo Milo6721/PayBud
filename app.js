@@ -439,7 +439,11 @@ function tabSettings() {
   const rename = owner ? `<form data-form="renameGroup" class="card stack"><b>Nazwa grupy</b><div class="row"><input name="name" value="${esc(g.name)}" required maxlength="60"><button class="btn" type="submit">Zapisz</button></div></form>` : '';
   const unlock = (isAdmin() && !groupUnlocked()) ? `<div class="card stack"><b>Bez limitu osób w tej grupie</b><p class="muted small">Jednorazowa opłata 10 zł — ta grupa na zawsze traci limit 3 osób, niezależnie od tego, kto ma premium na koncie. Nie daje skanu AI.</p><button class="btn wide" data-act="buyGroupPremium">Odblokuj tę grupę — 10 zł</button></div>` : (groupUnlocked() ? `<div class="notice">Ta grupa ma odblokowany limit osób.</div>` : '');
   const iconPicker = isAdmin() ? iconPickerHTML(g) : '';
+  const pdfExport = hasPremium(S.profile)
+    ? `<div class="card stack"><b>Eksport PDF</b><p class="muted small">Pełny raport: lista wydatków i podsumowanie sald w tej grupie.</p><button class="btn ghost wide" data-act="exportPdf">Pobierz PDF</button></div>`
+    : `<div class="card stack"><b>Eksport PDF</b><p class="muted small">Dostępny z Premium.</p><button class="btn ghost wide" data-act="premiumInfo">Zobacz Premium</button></div>`;
   return `${rename}${iconPicker}${unlock}${owner ? `<div class="card"><label class="switch-row"><span><b>Członkowie mogą zapraszać</b><div class="muted small">Domyślnie zapraszają tylko właściciel i admini.</div></span><input type="checkbox" data-act="toggleInvite" ${g.members_can_invite ? 'checked' : ''}></label></div>` : ''}
+  ${pdfExport}
   <div class="card stack"><b>Wyjście z grupy</b><p class="muted small">Wyjdziesz od razu, jeśli masz saldo 0 i brak oczekujących wydatków. W innym razie zaczyna się spór: reszta grupy ma godzinę na reakcję, potem wychodzisz automatycznie, a niewyrównane saldo zostaje zapisane poza grupą.</p><button class="btn ghost danger-t" data-act="leaveGroup">Wyjdź z grupy</button></div>
   ${owner && g.status === 'active' ? '<div class="card stack"><b>Zamknij grupę</b><p class="muted small">Po zamknięciu nie da się dodawać wydatków. Historia zostaje.</p><button class="btn ghost danger-t" data-act="closeGroup">Zamknij grupę</button></div>' : ''}`;
 }
@@ -454,11 +458,16 @@ function viewProfile() {
   <label class="field"><span>Numer konta</span><input name="bank_account" value="${esc(p.bank_account || '')}" maxlength="40" placeholder="np. PL00 1234 5678 ..."></label>
   <label class="field"><span>Numer BLIK (telefon)</span><input name="blik_phone" value="${esc(p.blik_phone || '')}" maxlength="20" placeholder="np. 600 000 000"></label>
   <button class="btn" type="submit">Zapisz</button></form>
+  <form data-form="changePassword" class="card stack"><b>Zmiana hasła</b>
+  <label class="field"><span>Nowe hasło <small>(min. 8 znaków)</small></span><input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+  <label class="field"><span>Powtórz nowe hasło</span><input name="password2" type="password" required minlength="8" autocomplete="new-password"></label>
+  <button class="btn" type="submit">Zmień hasło</button></form>
   <div class="card stack"><b>Premium ${prem ? '<span class="chip ok">aktywne</span>' : ''}</b>
   ${prem ? `<div class="muted small">Ważne do ${p.premium_until ? new Date(p.premium_until).toLocaleDateString('pl-PL') : 'bezterminowo'}.</div>` : '<div class="muted small">Plan darmowy: 1 grupa na zawsze, do 3 osób.</div>'}
   <ul class="feat"><li>Nielimitowana liczba grup</li><li>Nielimitowana liczba osób w grupach</li><li>Skan paragonów przez AI (do 20 dziennie)</li><li>Eksport PDF</li></ul>
   <button class="btn" data-act="premiumInfo">${prem ? 'Przedłuż premium' : 'Kup premium'}</button></div>
   <button class="btn ghost wide" data-act="logout">Wyloguj</button>
+  <button class="btn ghost danger-t wide" data-act="deleteAccount">Usuń konto</button>
   <footer class="auth-foot"><a href="legal/regulamin.html" target="_blank">Regulamin</a> · <a href="legal/polityka-prywatnosci.html" target="_blank">Polityka prywatności</a><div class="muted small" style="margin-top:6px">Pay Buddy — usługa w ramach MGS Corporation</div></footer></main>`;
 }
 
@@ -508,6 +517,12 @@ const forms = {
     if (error) throw error;
     await loadMe(); toast('Zapisano.'); render();
   },
+  async changePassword(f) {
+    if (f.password.value !== f.password2.value) throw new Error('Hasła nie są takie same.');
+    const { error } = await sb.auth.updateUser({ password: f.password.value });
+    if (error) throw error;
+    f.reset(); toast('Hasło zmienione.');
+  },
   async invite(f) {
     await rpc('invite_user', { p_group: S.gid, p_username: f.username.value });
     toast('Zaproszenie wysłane.'); await refreshGroup();
@@ -542,6 +557,15 @@ const actions = {
   authMode(d) { S.authMode = d.mode; S.pendingConfirm = null; render(); },
   async resend() { const { error } = await sb.auth.resend({ type: 'signup', email: S.pendingConfirm }); if (error) throw error; toast('Wysłano ponownie.'); },
   async logout() { await sb.auth.signOut(); },
+  async deleteAccount() {
+    const ok = await confirmBox('Usunąć konto na zawsze? Dane osobowe znikną, ale historia Twoich wydatków w grupach zostanie (bez Twojego imienia). Musisz wcześniej przekazać własność grup, w których jesteś jedynym właścicielem z innymi członkami, i rozliczyć wszystkie salda.', 'Usuń konto', true);
+    if (!ok) return;
+    await rpc('anonymize_my_profile');
+    const { error } = await sb.functions.invoke('delete-account', { body: {} });
+    if (error) throw await fnError(error);
+    await sb.auth.signOut();
+    toast('Konto usunięte.');
+  },
 
   async goHome() { S.view = 'home'; S.gid = null; render(); await refreshHome(); },
   openStatsAll() { S.view = 'statsAll'; render(); },
@@ -676,6 +700,53 @@ const actions = {
     if (error) throw await fnError(error);
     if (!data || !data.url) throw new Error((data && data.error) || 'Nie udało się rozpocząć płatności.');
     window.location.href = data.url;
+  },
+  exportPdf() {
+    if (!hasPremium(S.profile)) { actions.premiumInfo(); return; }
+    if (!window.jspdf) throw new Error('Nie udało się wczytać generatora PDF. Sprawdź połączenie i spróbuj ponownie.');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const D = S.data; const g = D.group;
+    // Domyślne fonty jsPDF (helvetica) nie mają polskich znaków diakrytycznych — zamieniamy je na odpowiedniki ASCII.
+    const PL = { 'ą': 'a', 'ć': 'c', 'ę': 'e', 'ł': 'l', 'ń': 'n', 'ó': 'o', 'ś': 's', 'ź': 'z', 'ż': 'z', 'Ą': 'A', 'Ć': 'C', 'Ę': 'E', 'Ł': 'L', 'Ń': 'N', 'Ó': 'O', 'Ś': 'S', 'Ź': 'Z', 'Ż': 'Z' };
+    const ascii = (s) => String(s == null ? '' : s)
+      .replace(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g, (c) => PL[c] || c)
+      .replace(/\u00a0/g, ' ')
+      .replace(/\u2212/g, '-')
+      .replace(/→/g, '->');
+    let y = 18;
+    const line = (txt, size, bold) => { doc.setFontSize(size || 11); doc.setFont(undefined, bold ? 'bold' : 'normal'); doc.text(ascii(txt), 14, y); y += size ? size * 0.6 : 7; };
+    const gap = (n) => { y += n || 4; };
+    const checkPage = () => { if (y > 280) { doc.addPage(); y = 18; } };
+
+    line(g.name, 18, true);
+    line(`Raport grupy — wygenerowano ${new Date().toLocaleDateString('pl-PL')}`, 10);
+    gap(4);
+
+    line('Wydatki', 14, true); gap(1);
+    const approved = D.expenses.filter((e) => e.status === 'approved');
+    if (!approved.length) { line('Brak zatwierdzonych wydatków.', 10); }
+    approved.forEach((e) => {
+      checkPage();
+      line(`${fmtDate(e.created_at)}  ${e.title}  —  ${fmt(e.amount_cents)}  (płacił: ${nameOf(e.paid_by)})`, 10);
+    });
+    gap(6); checkPage();
+
+    line('Salda', 14, true); gap(1);
+    D.balances.forEach((b) => {
+      checkPage();
+      const label = b.balance_cents > 0 ? `należy się ${fmt(b.balance_cents)}` : b.balance_cents < 0 ? `jest winien ${fmt(-b.balance_cents)}` : 'rozliczone';
+      line(`${nameOf(b.user_id)} — ${label}`, 10);
+    });
+    gap(6); checkPage();
+
+    line('Proponowane przelewy', 14, true); gap(1);
+    const transfers = computeTransfers(D.balances.map((b) => ({ user_id: b.user_id, cents: b.balance_cents })));
+    if (!transfers.length) { line('Brak — wszystko rozliczone.', 10); }
+    transfers.forEach((t) => { checkPage(); line(`${nameOf(t.from)} → ${nameOf(t.to)}  —  ${fmt(t.cents)}`, 10); });
+
+    doc.save(`${g.name.replace(/[^a-zA-Z0-9ąćęłńóśźż ]/gi, '').trim() || 'grupa'}.pdf`);
+    toast('PDF pobrany.');
   },
 };
 
