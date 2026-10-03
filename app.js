@@ -35,6 +35,8 @@ const I = {
   users: ic('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>'),
   cog: ic('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>'),
   list: ic('<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>'),
+  chart: ic('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+  repeat: ic('<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>', 20),
 };
 
 /* ---------- pomocnicze ---------- */
@@ -189,19 +191,21 @@ async function refreshHome() { await loadHome(); if (S.view === 'home') render()
 
 async function loadGroup() {
   const gid = S.gid;
-  const [g, mem, ex, bal, st, gp] = await Promise.all([
+  const [g, mem, ex, bal, st, gp, tpl] = await Promise.all([
     sb.from('groups').select('id,name,status,members_can_invite,created_by,icon_idx,color_idx').eq('id', gid).single(),
     sb.from('group_members').select('user_id,role,status,leave_requested_at').eq('group_id', gid).in('status', ['active', 'leaving', 'invited']),
     sb.from('expenses').select('id,title,note,amount_cents,paid_by,created_by,split,status,receipt_path,created_at,expense_shares(user_id,share_cents,approved,reject_reason)').eq('group_id', gid).order('created_at', { ascending: false }).limit(200),
     sb.rpc('group_balances', { p_group: gid }),
     sb.from('settlements').select('id,from_user,to_user,amount_cents,status,created_at').eq('group_id', gid).order('created_at', { ascending: false }).limit(100),
     sb.from('group_premium').select('group_id').eq('group_id', gid).maybeSingle(),
+    sb.from('expense_templates').select('id,title,amount_cents,paid_by,split,shares').eq('group_id', gid).order('created_at', { ascending: false }),
   ]);
   if (g.error || !g.data) throw new Error('Nie masz dostępu do tej grupy.');
   const members = mem.data || [];
   await loadProfiles([...members.map((m) => m.user_id), ...(ex.data || []).flatMap((e) => [e.paid_by, e.created_by]), ...(st.data || []).flatMap((s) => [s.from_user, s.to_user])]);
   S.data.group = g.data; S.data.members = members; S.data.expenses = ex.data || [];
   S.data.balances = bal.data || []; S.data.settlements = st.data || []; S.data.groupPremium = !!(gp.data);
+  S.data.templates = tpl.data || [];
 }
 async function refreshGroup() { await loadGroup(); if (S.view === 'group') render(); }
 
@@ -218,7 +222,7 @@ const groupLimit = () => groupUnlocked() ? Infinity : 3;
 function render() {
   const app = $('#app');
   if (!CONFIGURED) { app.innerHTML = viewSetup(); return; }
-  const v = { auth: viewAuth, recovery: viewRecovery, home: viewHome, group: viewGroup, profile: viewProfile }[S.view];
+  const v = { auth: viewAuth, recovery: viewRecovery, home: viewHome, group: viewGroup, profile: viewProfile, statsAll: viewStatsAll }[S.view];
   app.innerHTML = v ? v() : '<div class="center muted">Ładowanie…</div>';
 }
 
@@ -256,6 +260,22 @@ function viewAuth() {
   </div>`;
 }
 
+function viewStatsAll() {
+  const D = S.data;
+  const total = D.groups.reduce((a, g) => a + g.balance, 0);
+  const rows = D.groups.map((g) => {
+    const cv = groupCover(g.id, g.iconIdx, g.colorIdx);
+    return `<button class="row-item card" data-act="openGroup" data-id="${esc(g.id)}">
+      <div class="gc-cover" style="width:40px;height:40px;background:linear-gradient(135deg,${cv.c1},${cv.c2})"><span class="gc-icon" style="color:#fff">${cv.icon}</span></div>
+      <div class="ri-main"><div class="ri-title">${esc(g.name)}</div></div><div class="ri-side">${balHTML(g.balance)}</div></button>`;
+  }).join('');
+  return `<header class="topbar"><button class="icon-btn" data-act="goHome">${I.back}</button><div class="title">Statystyki</div></header>
+  <main class="page">
+    <div class="card center-col"><div class="muted small">Łączny bilans we wszystkich grupach</div><div class="big-amt">${balHTML(total)}</div></div>
+    <h3 class="sec">Saldo per grupa</h3>${rows || '<div class="empty">Brak grup.</div>'}
+  </main>`;
+}
+
 function viewRecovery() {
   return `<div class="auth"><div class="logo">Pay Buddy</div><div class="card"><h2>Nowe hasło</h2>
   <form data-form="newpass" class="stack"><label class="field"><span>Nowe hasło (min. 8 znaków)</span><input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
@@ -274,7 +294,7 @@ function viewHome() {
       <div class="gc-body"><div class="ri-title">${esc(g.name)}${g.status === 'closed' ? ' <span class="chip muted">zamknięta</span>' : ''}${g.mstatus === 'leaving' ? ' <span class="chip warn">wychodzisz</span>' : ''}</div><div class="gc-bal">${balHTML(g.balance)}</div></div>
     </button>`; }).join('')}</div>`
     : '<div class="empty">Nie masz jeszcze żadnej grupy.<br>Załóż pierwszą — np. wyjazd albo mieszkanie.</div>';
-  return `<header class="topbar"><div class="title">Twoje grupy ${hasPremium(S.profile) ? '<span class="chip ok">Premium</span>' : `<span class="chip">${D.groups.length}/1 grup — plan darmowy</span>`}</div><button class="icon-btn" data-act="refreshHome">${I.refresh}</button><button class="avatar-btn" data-act="openProfile">${avatar(me(), 34)}</button></header>
+  return `<header class="topbar"><div class="title">Twoje grupy ${hasPremium(S.profile) ? '<span class="chip ok">Premium</span>' : `<span class="chip">${D.groups.length}/1 grup — plan darmowy</span>`}</div><button class="icon-btn" data-act="openStatsAll" aria-label="Statystyki">${I.chart}</button><button class="icon-btn" data-act="refreshHome">${I.refresh}</button><button class="avatar-btn" data-act="openProfile">${avatar(me(), 34)}</button></header>
   <main class="page">${invites}${pend}${groups}<button class="btn wide" data-act="newGroup">+ Nowa grupa</button>${!hasPremium(S.profile) ? '<button class="link" data-act="premiumInfo">Zobacz co daje Premium →</button>' : ''}</main>`;
 }
 
@@ -284,8 +304,8 @@ function viewGroup() {
   const mine = (D.balances.find((b) => b.user_id === me()) || { balance_cents: 0 }).balance_cents;
   const pend = D.expenses.filter((e) => e.status === 'pending').length;
   const head = mine > 0 ? `Należy Ci się <span class="pos big">${fmt(mine)}</span>` : mine < 0 ? `Jesteś winien <span class="neg big">${fmt(-mine)}</span>` : 'Wszystko wyrównane';
-  const tabs = [['expenses', I.list, 'Wydatki'], ['settle', I.swap, 'Rozlicz'], ['members', I.users, 'Osoby'], ['settings', I.cog, 'Ustawienia']];
-  const body = { expenses: tabExpenses, settle: tabSettle, members: tabMembers, settings: tabSettings }[S.tab]();
+  const tabs = [['expenses', I.list, 'Wydatki'], ['settle', I.swap, 'Rozlicz'], ['stats', I.chart, 'Statystyki'], ['members', I.users, 'Osoby'], ['settings', I.cog, 'Ustawienia']];
+  const body = { expenses: tabExpenses, settle: tabSettle, stats: tabStats, members: tabMembers, settings: tabSettings }[S.tab]();
   const cv = groupCover(g.id, g.icon_idx, g.color_idx);
   return `<header class="topbar topbar-cover" style="background:linear-gradient(135deg,${cv.c1},${cv.c2})"><button class="icon-btn on-cover" data-act="goHome">${I.back}</button><div class="title on-cover">${cv.icon} ${esc(g.name)}${g.status === 'closed' ? ' <span class="chip muted">zamknięta</span>' : ''}</div><button class="icon-btn on-cover" data-act="refreshGroup">${I.refresh}</button></header>
   <main class="page"><div class="card balance" style="background:linear-gradient(135deg,${cv.c1},${cv.c2})"><div>${head}</div>${pend ? `<div class="muted small">${pend} ${pend === 1 ? 'wydatek czeka' : 'wydatki czekają'} na zatwierdzenie — nie wchodzą jeszcze do salda</div>` : ''}</div>${body}</main>
@@ -295,8 +315,12 @@ function viewGroup() {
 
 function tabExpenses() {
   const ex = S.data.expenses;
-  if (!ex.length) return '<div class="empty">Brak wydatków.<br>Dodaj pierwszy przyciskiem +.</div>';
-  return `<div class="list">${ex.map((e) => {
+  const tpl = S.data.templates || [];
+  const tplHTML = tpl.length ? `<h3 class="sec">Szablony</h3><div class="list">${tpl.map((t) => `
+    <div class="row-item card"><div class="ri-main"><div class="ri-title">${I.repeat} ${esc(t.title)}</div><div class="ri-sub">${fmt(t.amount_cents)} · płaci ${esc(nameOf(t.paid_by))}</div></div>
+    <div class="ri-side stack-tight"><button class="btn small" data-act="useTemplate" data-id="${esc(t.id)}">Dodaj</button>${isAdmin() ? `<button class="link small" data-act="deleteTemplate" data-id="${esc(t.id)}">Usuń</button>` : ''}</div></div>`).join('')}</div>` : '';
+  if (!ex.length) return `${tplHTML}<div class="empty">Brak wydatków.<br>Dodaj pierwszy przyciskiem +.</div>`;
+  return `${tplHTML}${tpl.length ? '<h3 class="sec">Wydatki</h3>' : ''}<div class="list">${ex.map((e) => {
     const sh = e.expense_shares || []; const done = sh.filter((s) => s.approved === true).length;
     const mineSh = sh.find((s) => s.user_id === me());
     const chip = e.status === 'approved' ? '<span class="chip ok">zatwierdzony</span>' : e.status === 'rejected' ? '<span class="chip bad">odrzucony</span>' : `<span class="chip warn">czeka ${done}/${sh.length}</span>`;
@@ -331,6 +355,37 @@ function tabSettle() {
   return `<h3 class="sec">Proponowane przelewy</h3>${rows || '<div class="empty">Nikt nikomu nic nie wisi.</div>'}
   <p class="muted small">Przelewy robicie poza aplikacją (BLIK, przelew). Tu tylko zaznaczasz, że zapłaciłeś, a druga osoba potwierdza.</p>
   ${hist ? `<h3 class="sec">Historia rozliczeń</h3>${hist}` : ''}`;
+}
+
+function tabStats() {
+  const D = S.data;
+  const approved = D.expenses.filter((e) => e.status === 'approved');
+  const totalSpent = approved.reduce((a, e) => a + e.amount_cents, 0);
+  const perPerson = {};
+  activeIds().forEach((id) => { perPerson[id] = { paid: 0, share: 0 }; });
+  approved.forEach((e) => {
+    if (perPerson[e.paid_by]) perPerson[e.paid_by].paid += e.amount_cents;
+    (e.expense_shares || []).forEach((s) => { if (perPerson[s.user_id]) perPerson[s.user_id].share += s.share_cents; });
+  });
+  const maxPaid = Math.max(1, ...Object.values(perPerson).map((p) => p.paid));
+  const bars = activeIds().map((id) => {
+    const p = perPerson[id]; const pct = Math.round((p.paid / maxPaid) * 100);
+    return `<div class="stat-row"><div class="stat-name">${avatar(id, 26)}<span>${esc(nameOf(id))}</span></div>
+      <div class="stat-bar-track"><div class="stat-bar" style="width:${pct}%"></div></div>
+      <div class="stat-nums"><b>${fmt(p.paid)}</b><span class="muted small">zapłacił</span></div></div>`;
+  }).join('');
+  const byMonth = {};
+  approved.forEach((e) => { const k = e.created_at.slice(0, 7); byMonth[k] = (byMonth[k] || 0) + e.amount_cents; });
+  const months = Object.keys(byMonth).sort().slice(-6);
+  const maxMonth = Math.max(1, ...months.map((k) => byMonth[k]));
+  const monthBars = months.map((k) => {
+    const [y, m] = k.split('-'); const label = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'][+m - 1];
+    const pct = Math.round((byMonth[k] / maxMonth) * 100);
+    return `<div class="month-col"><div class="month-bar-track"><div class="month-bar" style="height:${pct}%"></div></div><div class="muted small">${label}</div></div>`;
+  }).join('');
+  return `<div class="card center-col"><div class="muted small">Łącznie wydane w tej grupie</div><div class="big-amt">${fmt(totalSpent)}</div></div>
+  <h3 class="sec">Kto ile zapłacił</h3>${bars || '<div class="empty">Brak zatwierdzonych wydatków.</div>'}
+  ${months.length > 1 ? `<h3 class="sec">Wydatki miesiąc do miesiąca</h3><div class="month-chart">${monthBars}</div>` : ''}`;
 }
 
 function tabMembers() {
@@ -485,6 +540,7 @@ const actions = {
   async logout() { await sb.auth.signOut(); },
 
   async goHome() { S.view = 'home'; S.gid = null; render(); await refreshHome(); },
+  openStatsAll() { S.view = 'statsAll'; render(); },
   async refreshHome() { await refreshHome(); toast('Odświeżono.'); },
   async refreshGroup() { await refreshGroup(); toast('Odświeżono.'); },
   async openProfile() { S.view = 'profile'; render(); },
@@ -516,6 +572,7 @@ const actions = {
       <div class="shares">${rows}</div>${receipt}
       ${e.status === 'rejected' ? '<p class="notice">Wydatek odrzucony. Usuń go i dodaj ponownie z poprawkami.</p>' : ''}
       ${canDecide ? `<div class="row"><button class="btn" data-act="approve" data-id="${esc(e.id)}">Zatwierdzam</button><button class="btn ghost danger-t" data-act="rejectAsk" data-id="${esc(e.id)}">Odrzucam</button></div>` : ''}
+      ${isAdmin() ? `<button class="btn ghost wide" data-act="saveAsTemplate" data-id="${esc(e.id)}">${I.repeat} Zapisz jako szablon</button>` : ''}
       ${canDelete ? `<button class="btn ghost danger-t wide" data-act="deleteExpense" data-id="${esc(e.id)}">Usuń wydatek</button>` : ''}
       <button class="btn ghost wide" data-act="closeModal">Zamknij</button>`);
   },
@@ -525,6 +582,21 @@ const actions = {
     if (!(await confirmBox('Usunąć ten wydatek? Tego nie da się cofnąć.', 'Usuń', true))) return;
     const { error } = await sb.from('expenses').delete().eq('id', d.id); if (error) throw error;
     toast('Usunięto.'); await refreshGroup();
+  },
+  async saveAsTemplate(d) {
+    const e = S.data.expenses.find((x) => x.id === d.id); if (!e) return;
+    const shares = (e.expense_shares || []).map((s) => ({ user_id: s.user_id, share_cents: s.share_cents }));
+    await rpc('save_expense_template', { p_group: S.gid, p_title: e.title, p_amount: e.amount_cents, p_paid_by: e.paid_by, p_split: e.split, p_shares: shares });
+    closeModal(); toast('Zapisano jako szablon.'); await refreshGroup();
+  },
+  async useTemplate(d) {
+    await rpc('create_expense_from_template', { p_template: d.id });
+    toast('Wydatek dodany z szablonu. Osoby z podziału muszą go zatwierdzić.'); await refreshGroup();
+  },
+  async deleteTemplate(d) {
+    if (!(await confirmBox('Usunąć ten szablon?', 'Usuń', true))) return;
+    await rpc('delete_expense_template', { p_id: d.id });
+    toast('Usunięto szablon.'); await refreshGroup();
   },
 
   async markPaid(d) {
