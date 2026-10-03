@@ -1,6 +1,6 @@
 'use strict';
 /* =====================================================================
-   PayBud — klient. Wklej swoje dane z Supabase (Project Settings → API).
+   Pay Buddy — klient. Wklej swoje dane z Supabase (Project Settings → API).
    ===================================================================== */
 const SUPABASE_URL = 'https://tpylpqnlaelosrwaeysz.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_KCQJs6nW8aKBFBxycdmOsg_H2UQQ6Yu';
@@ -9,7 +9,7 @@ const { parseMoney, fmt, splitEqual, sharesFromItems, computeTransfers, esc, hue
 const CONFIGURED = !SUPABASE_URL.includes('TWOJ-PROJEKT') && !SUPABASE_ANON_KEY.includes('TWOJ_ANON');
 // Zabezpieczenie: ucina /rest/v1, /auth/v1 itp. oraz ukośnik i spacje na końcu adresu
 const BASE_URL = SUPABASE_URL.trim().replace(/\/(rest|auth|storage|functions|realtime)\/v1.*$/i, '').replace(/\/+$/, '');
-console.log('[PayBud] adres Supabase:', BASE_URL);
+console.log('[Pay Buddy] adres Supabase:', BASE_URL);
 const $ = (s) => document.querySelector(s);
 
 let sb = null;
@@ -72,7 +72,7 @@ const hasPremium = (p) => !!(p && p.is_premium && (!p.premium_until || new Date(
 async function loadProfiles(ids) {
   const need = [...new Set(ids)].filter((i) => i && !profCache[i]);
   if (!need.length) return;
-  const { data } = await sb.from('profiles').select('id,username,display_name,avatar_path,is_premium,premium_until').in('id', need);
+  const { data } = await sb.from('profiles').select('id,username,display_name,avatar_path,is_premium,premium_until,bank_account,blik_phone').in('id', need);
   (data || []).forEach((p) => { profCache[p.id] = p; });
 }
 const P = (id) => profCache[id] || { id, username: '?', display_name: 'Nieznany' };
@@ -165,7 +165,7 @@ function confirmBox(text, okLabel, danger) {
    ŁADOWANIE DANYCH
    ===================================================================== */
 async function loadMe() {
-  const { data, error } = await sb.from('profiles').select('id,username,display_name,avatar_path,is_premium,premium_until').eq('id', me()).single();
+  const { data, error } = await sb.from('profiles').select('id,username,display_name,avatar_path,is_premium,premium_until,bank_account,blik_phone').eq('id', me()).single();
   if (error) throw new Error('Nie znaleziono profilu. Uruchom schema.sql w Supabase.');
   S.profile = data; profCache[data.id] = data;
 }
@@ -192,7 +192,7 @@ async function loadGroup() {
   const [g, mem, ex, bal, st, gp] = await Promise.all([
     sb.from('groups').select('id,name,status,members_can_invite,created_by,icon_idx,color_idx').eq('id', gid).single(),
     sb.from('group_members').select('user_id,role,status,leave_requested_at').eq('group_id', gid).in('status', ['active', 'leaving', 'invited']),
-    sb.from('expenses').select('id,title,amount_cents,paid_by,created_by,split,status,receipt_path,created_at,expense_shares(user_id,share_cents,approved,reject_reason)').eq('group_id', gid).order('created_at', { ascending: false }).limit(200),
+    sb.from('expenses').select('id,title,note,amount_cents,paid_by,created_by,split,status,receipt_path,created_at,expense_shares(user_id,share_cents,approved,reject_reason)').eq('group_id', gid).order('created_at', { ascending: false }).limit(200),
     sb.rpc('group_balances', { p_group: gid }),
     sb.from('settlements').select('id,from_user,to_user,amount_cents,status,created_at').eq('group_id', gid).order('created_at', { ascending: false }).limit(100),
     sb.from('group_premium').select('group_id').eq('group_id', gid).maybeSingle(),
@@ -223,7 +223,7 @@ function render() {
 }
 
 function viewSetup() {
-  return `<div class="auth"><div class="logo">PayBud</div><div class="card"><h2>Brakuje konfiguracji</h2>
+  return `<div class="auth"><div class="logo">Pay Buddy</div><div class="card"><h2>Brakuje konfiguracji</h2>
   <p class="muted">Otwórz <b>app.js</b> i wklej na samej górze <b>SUPABASE_URL</b> oraz <b>SUPABASE_ANON_KEY</b> (Supabase → Project Settings → API).</p></div></div>`;
 }
 
@@ -248,16 +248,16 @@ function viewAuth() {
     <button class="btn" type="submit">Wyślij link</button>
     <button type="button" class="link" data-act="authMode" data-mode="login">Wróć</button></form>`;
   const tabs = m === 'forgot' ? '' : `<div class="seg"><button class="${m === 'login' ? 'on' : ''}" data-act="authMode" data-mode="login">Logowanie</button><button class="${m === 'register' ? 'on' : ''}" data-act="authMode" data-mode="register">Rejestracja</button></div>`;
-  return `<div class="auth"><div class="logo">PayBud</div><p class="tag">Rozliczaj się ze znajomymi bez kłótni.</p>${banner}<div class="card">${tabs}${form}</div>
+  return `<div class="auth"><div class="logo">Pay Buddy</div><p class="tag">Rozliczaj się ze znajomymi bez kłótni.</p>${banner}<div class="card">${tabs}${form}</div>
     <footer class="auth-foot">
       <a href="legal/regulamin.html" target="_blank">Regulamin</a> · <a href="legal/polityka-prywatnosci.html" target="_blank">Polityka prywatności</a>
-      <div class="muted small" style="margin-top:6px">PayBud — usługa w ramach MGS Corporation<br>Operator: MGS Corporation · NIP brak · kontakt: mgs.corporation@outlook.com</div>
+      <div class="muted small" style="margin-top:6px">Pay Buddy — usługa w ramach MGS Corporation<br>Operator: MGS Corporation · NIP brak · kontakt: mgs.corporation@outlook.com</div>
     </footer>
   </div>`;
 }
 
 function viewRecovery() {
-  return `<div class="auth"><div class="logo">PayBud</div><div class="card"><h2>Nowe hasło</h2>
+  return `<div class="auth"><div class="logo">Pay Buddy</div><div class="card"><h2>Nowe hasło</h2>
   <form data-form="newpass" class="stack"><label class="field"><span>Nowe hasło (min. 8 znaków)</span><input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
   <button class="btn" type="submit">Zapisz hasło</button></form></div></div>`;
 }
@@ -313,8 +313,15 @@ function tabSettle() {
   const open = (from, to) => D.settlements.find((s) => s.from_user === from && s.to_user === to && ['proposed', 'paid'].includes(s.status));
   const rows = transfers.map((t) => {
     let action = '<span class="muted small">czeka na wpłatę</span>';
-    if (t.from === me()) action = open(t.from, t.to) ? '<span class="chip warn">czeka na potwierdzenie</span>' : `<button class="btn small" data-act="markPaid" data-to="${esc(t.to)}" data-cents="${t.cents}">Zapłaciłem</button>`;
-    return `<div class="card transfer"><div class="tf-who">${avatar(t.from, 34)}<span>${esc(nameOf(t.from))}</span></div><div class="tf-mid">${I.swap}<b>${fmt(t.cents)}</b></div><div class="tf-who">${avatar(t.to, 34)}<span>${esc(nameOf(t.to))}</span></div><div class="tf-act">${action}</div></div>`;
+    let payInfo = '';
+    if (t.from === me()) {
+      action = open(t.from, t.to) ? '<span class="chip warn">czeka na potwierdzenie</span>' : `<button class="btn small" data-act="markPaid" data-to="${esc(t.to)}" data-cents="${t.cents}">Zapłaciłem</button>`;
+      const pTo = P(t.to);
+      if (pTo.bank_account || pTo.blik_phone) {
+        payInfo = `<div class="pay-info">${pTo.bank_account ? `<div>Konto: <b>${esc(pTo.bank_account)}</b></div>` : ''}${pTo.blik_phone ? `<div>BLIK: <b>${esc(pTo.blik_phone)}</b></div>` : ''}</div>`;
+      }
+    }
+    return `<div class="card transfer"><div class="tf-who">${avatar(t.from, 34)}<span>${esc(nameOf(t.from))}</span></div><div class="tf-mid">${I.swap}<b>${fmt(t.cents)}</b></div><div class="tf-who">${avatar(t.to, 34)}<span>${esc(nameOf(t.to))}</span></div><div class="tf-act">${action}</div>${payInfo}</div>`;
   }).join('');
   const hist = D.settlements.map((s) => {
     const label = { proposed: 'zgłoszone', paid: 'zapłacone — czeka na potwierdzenie', confirmed: 'potwierdzone' }[s.status];
@@ -370,9 +377,10 @@ function iconPickerHTML(g) {
 
 function tabSettings() {
   const D = S.data; const owner = myRole() === 'owner'; const g = D.group;
+  const rename = owner ? `<form data-form="renameGroup" class="card stack"><b>Nazwa grupy</b><div class="row"><input name="name" value="${esc(g.name)}" required maxlength="60"><button class="btn" type="submit">Zapisz</button></div></form>` : '';
   const unlock = (isAdmin() && !groupUnlocked()) ? `<div class="card stack"><b>Bez limitu osób w tej grupie</b><p class="muted small">Jednorazowa opłata 10 zł — ta grupa na zawsze traci limit 3 osób, niezależnie od tego, kto ma premium na koncie. Nie daje skanu AI.</p><button class="btn wide" data-act="buyGroupPremium">Odblokuj tę grupę — 10 zł</button></div>` : (groupUnlocked() ? `<div class="notice">Ta grupa ma odblokowany limit osób.</div>` : '');
   const iconPicker = isAdmin() ? iconPickerHTML(g) : '';
-  return `${iconPicker}${unlock}${owner ? `<div class="card"><label class="switch-row"><span><b>Członkowie mogą zapraszać</b><div class="muted small">Domyślnie zapraszają tylko właściciel i admini.</div></span><input type="checkbox" data-act="toggleInvite" ${g.members_can_invite ? 'checked' : ''}></label></div>` : ''}
+  return `${rename}${iconPicker}${unlock}${owner ? `<div class="card"><label class="switch-row"><span><b>Członkowie mogą zapraszać</b><div class="muted small">Domyślnie zapraszają tylko właściciel i admini.</div></span><input type="checkbox" data-act="toggleInvite" ${g.members_can_invite ? 'checked' : ''}></label></div>` : ''}
   <div class="card stack"><b>Wyjście z grupy</b><p class="muted small">Wyjdziesz od razu, jeśli masz saldo 0 i brak oczekujących wydatków. W innym razie zaczyna się spór: reszta grupy ma godzinę na reakcję, potem wychodzisz automatycznie, a niewyrównane saldo zostaje zapisane poza grupą.</p><button class="btn ghost danger-t" data-act="leaveGroup">Wyjdź z grupy</button></div>
   ${owner && g.status === 'active' ? '<div class="card stack"><b>Zamknij grupę</b><p class="muted small">Po zamknięciu nie da się dodawać wydatków. Historia zostaje.</p><button class="btn ghost danger-t" data-act="closeGroup">Zamknij grupę</button></div>' : ''}`;
 }
@@ -383,12 +391,16 @@ function viewProfile() {
   <main class="page"><div class="card center-col">${avatar(me(), 92)}<label class="btn small ghost">Zmień zdjęcie<input type="file" accept="image/*" hidden data-file="avatar"></label>
   <div class="muted">@${esc(p.username)} ${prem ? '<span class="chip ok">Premium</span>' : ''}</div><div class="muted small">${esc(S.user.email)}</div></div>
   <form data-form="profile" class="card stack"><label class="field"><span>Imię / pseudonim</span><input name="display" value="${esc(p.display_name || '')}" maxlength="30"></label><button class="btn" type="submit">Zapisz</button></form>
+  <form data-form="payInfo" class="card stack"><b>Dane do przelewu</b><p class="muted small">Pokazujemy je tylko osobom, które są Ci winne pieniądze w Waszej wspólnej grupie.</p>
+  <label class="field"><span>Numer konta</span><input name="bank_account" value="${esc(p.bank_account || '')}" maxlength="40" placeholder="np. PL00 1234 5678 ..."></label>
+  <label class="field"><span>Numer BLIK (telefon)</span><input name="blik_phone" value="${esc(p.blik_phone || '')}" maxlength="20" placeholder="np. 600 000 000"></label>
+  <button class="btn" type="submit">Zapisz</button></form>
   <div class="card stack"><b>Premium ${prem ? '<span class="chip ok">aktywne</span>' : ''}</b>
   ${prem ? `<div class="muted small">Ważne do ${p.premium_until ? new Date(p.premium_until).toLocaleDateString('pl-PL') : 'bezterminowo'}.</div>` : '<div class="muted small">Plan darmowy: 1 grupa na zawsze, do 3 osób.</div>'}
   <ul class="feat"><li>Nielimitowana liczba grup</li><li>Nielimitowana liczba osób w grupach</li><li>Skan paragonów przez AI (do 20 dziennie)</li><li>Eksport PDF</li></ul>
   <button class="btn" data-act="premiumInfo">${prem ? 'Przedłuż premium' : 'Kup premium'}</button></div>
   <button class="btn ghost wide" data-act="logout">Wyloguj</button>
-  <footer class="auth-foot"><a href="legal/regulamin.html" target="_blank">Regulamin</a> · <a href="legal/polityka-prywatnosci.html" target="_blank">Polityka prywatności</a><div class="muted small" style="margin-top:6px">PayBud — usługa w ramach MGS Corporation</div></footer></main>`;
+  <footer class="auth-foot"><a href="legal/regulamin.html" target="_blank">Regulamin</a> · <a href="legal/polityka-prywatnosci.html" target="_blank">Polityka prywatności</a><div class="muted small" style="margin-top:6px">Pay Buddy — usługa w ramach MGS Corporation</div></footer></main>`;
 }
 
 /* =====================================================================
@@ -430,9 +442,23 @@ const forms = {
     if (error) throw error;
     await loadMe(); toast('Zapisano.'); render();
   },
+  async payInfo(f) {
+    const bank_account = f.bank_account.value.trim() || null;
+    const blik_phone = f.blik_phone.value.trim() || null;
+    const { error } = await sb.from('profiles').update({ bank_account, blik_phone }).eq('id', me());
+    if (error) throw error;
+    await loadMe(); toast('Zapisano.'); render();
+  },
   async invite(f) {
     await rpc('invite_user', { p_group: S.gid, p_username: f.username.value });
     toast('Zaproszenie wysłane.'); await refreshGroup();
+  },
+  async renameGroup(f) {
+    const name = f.name.value.trim();
+    if (!name) throw new Error('Podaj nazwę grupy.');
+    const { error } = await sb.from('groups').update({ name }).eq('id', S.gid);
+    if (error) throw error;
+    toast('Nazwa zapisana.'); await refreshGroup();
   },
   async newGroup(f) {
     const id = await rpc('create_group', { p_name: f.name.value });
@@ -486,6 +512,7 @@ const actions = {
     const canDelete = e.created_by === me() && ['pending', 'rejected'].includes(e.status);
     openModal(`<h3>${esc(e.title)}</h3><div class="big-amt">${fmt(e.amount_cents)}</div>
       <div class="muted small">Płacił(a): ${esc(nameOf(e.paid_by))} · dodał(a): ${esc(nameOf(e.created_by))} · ${fmtDate(e.created_at)}</div>
+      ${e.note ? `<div class="note-box">${esc(e.note)}</div>` : ''}
       <div class="shares">${rows}</div>${receipt}
       ${e.status === 'rejected' ? '<p class="notice">Wydatek odrzucony. Usuń go i dodaj ponownie z poprawkami.</p>' : ''}
       ${canDecide ? `<div class="row"><button class="btn" data-act="approve" data-id="${esc(e.id)}">Zatwierdzam</button><button class="btn ghost danger-t" data-act="rejectAsk" data-id="${esc(e.id)}">Odrzucam</button></div>` : ''}
@@ -558,7 +585,7 @@ const actions = {
   /* ----- premium ----- */
   async premiumInfo() {
     const price = await rpc('my_premium_price');
-    openModal(`<h3>PayBud Premium</h3><ul class="feat"><li>Nielimitowana liczba grup (plan darmowy: 1 grupa na zawsze)</li><li>Nielimitowana liczba osób w każdej Twojej grupie</li><li>Skan paragonów przez AI — zdjęcie i gotowy wydatek, do 20 dziennie</li><li>Eksport PDF</li></ul>
+    openModal(`<h3>Pay Buddy Premium</h3><ul class="feat"><li>Nielimitowana liczba grup (plan darmowy: 1 grupa na zawsze)</li><li>Nielimitowana liczba osób w każdej Twojej grupie</li><li>Skan paragonów przez AI — zdjęcie i gotowy wydatek, do 20 dziennie</li><li>Eksport PDF</li></ul>
       <div class="big-amt">${fmt(price)} <small>/ 30 dni</small></div>
       <button class="btn wide" data-act="buyPremium">Zapłać przez Przelewy24</button><button class="btn ghost wide" data-act="closeModal">Nie teraz</button>`);
   },
@@ -579,7 +606,7 @@ const actions = {
 /* ---------- formularz wydatku ---------- */
 function newForm() {
   const ids = activeIds();
-  return { title: '', amount: '', paidBy: me(), mode: 'equal', selected: new Set(ids), amounts: {}, debtor: ids.find((i) => i !== me()) || null, receipt: null };
+  return { title: '', amount: '', paidBy: me(), mode: 'equal', selected: new Set(ids), amounts: {}, debtor: ids.find((i) => i !== me()) || null, receipt: null, note: '' };
 }
 function openAddExpense() {
   const opts = activeMembers().map((m) => `<option value="${esc(m.user_id)}" ${m.user_id === F.paidBy ? 'selected' : ''}>${esc(nameOf(m.user_id))}</option>`).join('');
@@ -591,6 +618,7 @@ function openAddExpense() {
     <label class="field"><span>Za co?</span><input data-f="title" value="${esc(F.title)}" required maxlength="100" placeholder="np. Zakupy, paliwo, pizza"></label>
     <label class="field"><span>Kwota (zł)</span><input data-f="amount" value="${esc(F.amount)}" inputmode="decimal" required placeholder="0,00"></label>
     <label class="field"><span>Kto zapłacił?</span><select data-f="paidBy">${opts}</select></label>
+    <label class="field"><span>Notatka <small>(opcjonalnie)</small></span><input data-f="note" value="${esc(F.note || '')}" maxlength="300" placeholder="np. taxi z lotniska"></label>
     <div class="seg"><button type="button" data-act="setMode" data-mode="equal" class="${F.mode === 'equal' ? 'on' : ''}">Po równo</button><button type="button" data-act="setMode" data-mode="unequal" class="${F.mode === 'unequal' ? 'on' : ''}">Nierówno</button><button type="button" data-act="setMode" data-mode="full" class="${F.mode === 'full' ? 'on' : ''}">Musi oddać</button></div>
     <div id="split-area"></div><div id="preview" class="muted small"></div>
     <div class="row"><button type="button" class="btn ghost" data-act="closeModal">Anuluj</button><button class="btn" type="submit">Dodaj</button></div>
@@ -650,7 +678,7 @@ async function submitExpense() {
     const up = await sb.storage.from('receipts').upload(receiptPath, F.receipt, { contentType: 'image/jpeg' });
     if (up.error) throw up.error;
   }
-  await rpc('create_expense', { p_group: S.gid, p_title: title, p_amount: total, p_paid_by: F.paidBy, p_split: split, p_shares: shares, p_receipt: receiptPath });
+  await rpc('create_expense', { p_group: S.gid, p_title: title, p_amount: total, p_paid_by: F.paidBy, p_split: split, p_shares: shares, p_receipt: receiptPath, p_note: (F.note || '').trim() || null });
   F = null; closeModal(); toast('Wydatek dodany. Osoby z podziału muszą go zatwierdzić.'); await refreshGroup();
 }
 
